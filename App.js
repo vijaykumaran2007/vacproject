@@ -10,18 +10,20 @@ import {
   TouchableOpacity,
   Platform,
 } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
 
 import { THEME, getStatusConfig } from './src/constants/theme';
 import GaugeMeter from './src/components/GaugeMeter';
 import HistoryChart from './src/components/HistoryChart';
 import AlertBanner from './src/components/AlertBanner';
+import PredictionCards from './src/components/PredictionCards';
+import HealthTipCard from './src/components/HealthTipCard';
 import BottomNav from './src/components/BottomNav';
 
 import SettingsScreen from './src/screens/SettingsScreen';
 import EspCodeModal from './src/screens/EspCodeModal';
 
 import { classifyAirCondition } from './src/utils/mlClassifier';
+import { calculateRiskPredictions, getHealthTip } from './src/utils/riskCalculator';
 import {
   registerForPushNotificationsAsync,
   checkAndTriggerAirQualityAlert,
@@ -45,10 +47,10 @@ export default function App() {
 
   // Live telemetry data
   const [telemetry, setTelemetry] = useState({
-    air: 420,
-    temp: 32,
-    humidity: 65,
-    status: 'Moderate',
+    air: 105,
+    temp: 24.5,
+    humidity: 50,
+    status: 'Good',
     timestamp: Date.now(),
   });
 
@@ -65,10 +67,12 @@ export default function App() {
   // Interval reference
   const pollIntervalRef = useRef(null);
 
-  // ML classification & status
+  // ML classification, status, risk calculations and health tip
   const mlResult = classifyAirCondition(telemetry);
+  const risks = calculateRiskPredictions(telemetry);
+  const healthTip = getHealthTip(risks, telemetry);
   const statusCfg = getStatusConfig(telemetry.status || telemetry.air);
-  const isPoor = statusCfg.label === 'Poor' || mlResult.label !== 'Clean Air';
+  const isPoor = statusCfg.label === 'Poor' || mlResult.label !== 'Clean Air' || risks.hasHazard;
 
   // 1. Initial Load: load settings & history, register notifications
   useEffect(() => {
@@ -127,25 +131,32 @@ export default function App() {
     if (lat) setLatency(lat);
 
     const ml = classifyAirCondition(newData);
+    const calculatedRisks = calculateRiskPredictions(newData);
 
-    // Trigger local push notification + haptics if Air Quality is POOR
+    // Trigger local push notification + haptics if Air Quality is POOR or Gas/Smoke detected
     checkAndTriggerAirQualityAlert({
       air: newData.air,
       temp: newData.temp,
       humidity: newData.humidity,
       status: newData.status,
       prediction: ml.label,
+      hasGasLeak: calculatedRisks.hasGasLeak,
+      hasSmoke: calculatedRisks.hasSmoke,
     });
 
+    // Reset dismissal when new data arrives
     setBannerDismissed(false);
 
     setHistory((prev) => {
-      const next = [...prev, {
-        air: newData.air,
-        temp: newData.temp,
-        humidity: newData.humidity,
-        timestamp: newData.timestamp || Date.now(),
-      }].slice(-10);
+      const next = [
+        ...prev,
+        {
+          air: newData.air,
+          temp: newData.temp,
+          humidity: newData.humidity,
+          timestamp: newData.timestamp || Date.now(),
+        },
+      ].slice(-10);
       saveHistory(next);
       return next;
     });
@@ -183,6 +194,50 @@ export default function App() {
   const handleSaveSettings = async (newSettings) => {
     setSettings(newSettings);
     await saveSettings(newSettings);
+  };
+
+  // Quick scenario test trigger from Settings
+  const handleSelectScenario = (scenario) => {
+    let mock;
+    if (scenario === 'gas') {
+      mock = {
+        air: 560,
+        temp: 26,
+        humidity: 45,
+        status: 'Poor',
+        prediction: 'Gas Leak',
+        timestamp: Date.now(),
+      };
+    } else if (scenario === 'smoke') {
+      mock = {
+        air: 510,
+        temp: 37,
+        humidity: 64,
+        status: 'Poor',
+        prediction: 'Smoke',
+        timestamp: Date.now(),
+      };
+    } else if (scenario === 'respiratory') {
+      mock = {
+        air: 380,
+        temp: 32,
+        humidity: 80,
+        status: 'Poor',
+        prediction: 'Clean Air',
+        timestamp: Date.now(),
+      };
+    } else {
+      mock = {
+        air: 85,
+        temp: 24,
+        humidity: 48,
+        status: 'Good',
+        prediction: 'Clean Air',
+        timestamp: Date.now(),
+      };
+    }
+    updateTelemetryAndHistory(mock, true, 15);
+    setActiveTab('dashboard');
   };
 
   return (
@@ -254,9 +309,11 @@ export default function App() {
               </TouchableOpacity>
             </View>
 
-            {/* Poor Air Alert Push Notification Banner */}
+            {/* 2. Alert Banner at top of screen: Red flashing banner on gas leak or smoke */}
             {!bannerDismissed && (
               <AlertBanner
+                gasLeakDetected={risks.hasGasLeak}
+                smokeDetected={risks.hasSmoke}
                 status={telemetry.status}
                 air={telemetry.air}
                 prediction={mlResult.label}
@@ -264,6 +321,7 @@ export default function App() {
               />
             )}
 
+            {/* Main Dashboard Elements */}
             {/* Air Quality Gauge Card */}
             <View
               style={[
@@ -303,68 +361,18 @@ export default function App() {
               </View>
             </View>
 
-            {/* ML Prediction Card */}
-            <View
-              style={[
-                styles.mlCard,
-                isPoor ? styles.mlCardPoor : styles.mlCardClean,
-              ]}
-            >
-              {/* Icon Box */}
-              <View
-                style={[
-                  styles.mlIconBox,
-                  isPoor ? styles.mlIconBoxPoor : styles.mlIconBoxClean,
-                ]}
-              >
-                {isPoor ? (
-                  <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-                    <Path
-                      d="M12 3l10 18H2z"
-                      stroke="#F87171"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                    />
-                    <Path
-                      d="M12 10v4M12 17.5v.01"
-                      stroke="#F87171"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                    />
-                  </Svg>
-                ) : (
-                  <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-                    <Path
-                      d="M5 13c4 0 6-2 6-6 0 5 3 7 8 7-1 4-4 6-7 6s-7-2-7-7z"
-                      stroke="#34D399"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                    />
-                  </Svg>
-                )}
-              </View>
+            {/* 1. Prediction Cards Section (below the main dashboard) */}
+            <PredictionCards risks={risks} />
 
-              <View>
-                <Text style={[styles.mlLabel, isPoor && styles.mlLabelPoor]}>
-                  ML prediction
-                </Text>
-                <Text
-                  style={[
-                    styles.mlValue,
-                    { color: isPoor ? THEME.colors.poorText : THEME.colors.goodText },
-                  ]}
-                >
-                  {mlResult.label}
-                </Text>
-              </View>
-            </View>
-
-            {/* Last 10 Readings Line Chart */}
+            {/* Last 10 Readings Line Chart (Graph) */}
             <HistoryChart
               history={history}
               status={telemetry.status}
               air={telemetry.air}
             />
+
+            {/* 4. Health Tip Card at bottom */}
+            <HealthTipCard tipInfo={healthTip} />
           </ScrollView>
         ) : (
           /* Settings Screen Tab */
@@ -373,21 +381,16 @@ export default function App() {
             isConnected={isConnected}
             onSaveSettings={handleSaveSettings}
             onOpenEspCode={() => setShowEspCode(true)}
+            onSelectScenario={handleSelectScenario}
           />
         )}
       </View>
 
       {/* Bottom Navigation */}
-      <BottomNav
-        activeTab={activeTab}
-        onChangeTab={setActiveTab}
-      />
+      <BottomNav activeTab={activeTab} onChangeTab={setActiveTab} />
 
       {/* ESP32 Arduino Sketch Code Helper */}
-      <EspCodeModal
-        visible={showEspCode}
-        onClose={() => setShowEspCode(false)}
-      />
+      <EspCodeModal visible={showEspCode} onClose={() => setShowEspCode(false)} />
     </SafeAreaView>
   );
 }
@@ -406,11 +409,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 24,
+    paddingBottom: 28,
   },
   header: {
     paddingHorizontal: 20,
     paddingTop: 16,
+    paddingBottom: 4,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -459,7 +463,7 @@ const styles = StyleSheet.create({
   },
   gaugeCard: {
     marginHorizontal: 20,
-    marginTop: 20,
+    marginTop: 14,
     borderRadius: 24,
     padding: 20,
     alignItems: 'center',
@@ -506,49 +510,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#9AA8B6',
     fontWeight: '500',
-  },
-  mlCard: {
-    marginHorizontal: 20,
-    marginTop: 12,
-    borderRadius: 20,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    borderWidth: 1,
-  },
-  mlCardClean: {
-    backgroundColor: '#10281F',
-    borderColor: '#1C4A38',
-  },
-  mlCardPoor: {
-    backgroundColor: '#2A1416',
-    borderColor: '#6B2327',
-  },
-  mlIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  mlIconBoxClean: {
-    backgroundColor: '#163B2D',
-  },
-  mlIconBoxPoor: {
-    backgroundColor: '#451A1D',
-  },
-  mlLabel: {
-    fontSize: 12,
-    color: '#9AA8B6',
-    fontWeight: '500',
-  },
-  mlLabelPoor: {
-    color: '#C3A5A8',
-  },
-  mlValue: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginTop: 2,
   },
 });

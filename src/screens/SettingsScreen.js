@@ -20,6 +20,7 @@ export default function SettingsScreen({
   isConnected,
   onSaveSettings,
   onOpenEspCode,
+  onSelectScenario,
 }) {
   const [ip, setIp] = useState(settings.ip || THEME.defaultEsp32.ip);
   const [testing, setTesting] = useState(false);
@@ -191,6 +192,66 @@ export default function SettingsScreen({
         </TouchableOpacity>
       </View>
 
+      {/* Interactive Scenario Testing Card */}
+      {onSelectScenario && (
+        <View style={styles.scenarioCard}>
+          <Text style={styles.scenarioTitle}>Simulate Risk Scenarios</Text>
+          <Text style={styles.scenarioSubtitle}>
+            Test the UI prediction cards, flashing alert banner, and health tips instantly
+          </Text>
+
+          <View style={styles.scenarioGrid}>
+            <TouchableOpacity
+              style={[styles.scenarioBtn, { borderColor: '#EF4444', backgroundColor: '#2A1416' }]}
+              onPress={() => onSelectScenario('gas')}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="warning" size={16} color="#EF4444" />
+              <View>
+                <Text style={[styles.scenarioBtnText, { color: '#FCA5A5' }]}>Gas Leak Hazard</Text>
+                <Text style={styles.scenarioBtnSub}>Air: 560 · Hum: 45%</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.scenarioBtn, { borderColor: '#F97316', backgroundColor: '#2B1A12' }]}
+              onPress={() => onSelectScenario('smoke')}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="flame" size={16} color="#F97316" />
+              <View>
+                <Text style={[styles.scenarioBtnText, { color: '#FDBA74' }]}>Smoke / Fire Risk</Text>
+                <Text style={styles.scenarioBtnSub}>Air: 510 · Temp: 37°C</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.scenarioBtn, { borderColor: '#FBBF24', backgroundColor: '#251E14' }]}
+              onPress={() => onSelectScenario('respiratory')}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="pulse" size={16} color="#FBBF24" />
+              <View>
+                <Text style={[styles.scenarioBtnText, { color: '#FDE047' }]}>High Respiratory</Text>
+                <Text style={styles.scenarioBtnSub}>Air: 380 · Hum: 80%</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.scenarioBtn, { borderColor: '#10B981', backgroundColor: '#10281F' }]}
+              onPress={() => onSelectScenario('clean')}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="leaf" size={16} color="#10B981" />
+              <View>
+                <Text style={[styles.scenarioBtnText, { color: '#6EE7B7' }]}>Clean Baseline</Text>
+                <Text style={styles.scenarioBtnSub}>Air: 85 · Safe</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       {/* Arduino Code Button */}
       {onOpenEspCode && (
         <TouchableOpacity
@@ -357,5 +418,46 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#9AA8B6',
     fontWeight: '600',
+  },
+  scenarioCard: {
+    marginHorizontal: 20,
+    marginTop: 16,
+    backgroundColor: THEME.colors.cardBg,
+    borderWidth: 1,
+    borderColor: THEME.colors.cardBorder,
+    borderRadius: 24,
+    padding: 16,
+  },
+  scenarioTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#E8EEF4',
+  },
+  scenarioSubtitle: {
+    fontSize: 12,
+    color: '#9AA8B6',
+    marginTop: 2,
+    marginBottom: 12,
+  },
+  scenarioGrid: {
+    gap: 8,
+  },
+  scenarioBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  scenarioBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  scenarioBtnSub: {
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 1,
   },
 });

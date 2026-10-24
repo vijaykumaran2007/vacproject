@@ -49,8 +49,18 @@ export async function registerForPushNotificationsAsync() {
  * Trigger hazard alert notification if air quality is Poor.
  * Debounced so it doesn't spam the user every 3 seconds.
  */
-export async function checkAndTriggerAirQualityAlert({ air, temp, humidity, status, prediction, force = false }) {
-  const isPoor = (status || '').toLowerCase() === 'poor' || Number(air) >= 301;
+export async function checkAndTriggerAirQualityAlert({
+  air,
+  temp,
+  humidity,
+  status,
+  prediction,
+  hasGasLeak = false,
+  hasSmoke = false,
+  force = false,
+}) {
+  const isCriticalHazard = hasGasLeak || hasSmoke;
+  const isPoor = isCriticalHazard || (status || '').toLowerCase() === 'poor' || Number(air) >= 301;
   const now = Date.now();
 
   // Reset flag if recovered
@@ -73,19 +83,26 @@ export async function checkAndTriggerAirQualityAlert({ air, temp, humidity, stat
 
     // Send push notification
     try {
-      const hazardTitle = prediction === 'Gas Leak'
-        ? '⚠️ GAS LEAK HAZARD DETECTED!'
-        : prediction === 'Smoke'
-        ? '🔥 SMOKE / FIRE RISK DETECTED!'
-        : '🚨 POOR AIR QUALITY ALERT!';
+      let hazardTitle = '🚨 POOR AIR QUALITY ALERT!';
+      if (hasGasLeak && hasSmoke) {
+        hazardTitle = '⚠️ WARNING: Gas Leak & Smoke Detected!';
+      } else if (hasGasLeak) {
+        hazardTitle = '⚠️ WARNING: Gas Leak Detected - Ventilate Immediately!';
+      } else if (hasSmoke) {
+        hazardTitle = '🔥 WARNING: Smoke Detected - Possible Fire!';
+      } else if (prediction === 'Gas Leak') {
+        hazardTitle = '⚠️ WARNING: Gas Leak Detected - Ventilate Immediately!';
+      } else if (prediction === 'Smoke') {
+        hazardTitle = '🔥 WARNING: Smoke Detected - Possible Fire!';
+      }
 
-      const body = `Air Quality index is ${air} (Poor). Temp: ${temp}°C, Hum: ${humidity}%. ML Detection: ${prediction}. Take immediate safety precautions!`;
+      const body = `Air Quality index is ${air} (Poor). Temp: ${temp}°C, Hum: ${humidity}%. Take immediate safety precautions!`;
 
       await Notifications.scheduleNotificationAsync({
         content: {
           title: hazardTitle,
           body,
-          data: { air, temp, humidity, status, prediction },
+          data: { air, temp, humidity, status, prediction, hasGasLeak, hasSmoke },
           sound: true,
           priority: Notifications.AndroidNotificationPriority.HIGH,
         },
